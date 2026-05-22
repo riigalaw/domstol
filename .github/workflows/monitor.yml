@@ -1,0 +1,70 @@
+name: Monitor domstol.se
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "If 'true', mark all current feed items as seen without sending emails."
+        required: false
+        default: "false"
+      dry_run:
+        description: "If 'true', classify but do not send emails."
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: domstol-monitor
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run monitor
+        env:
+          GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL:      ${{ secrets.GEMINI_MODEL }}
+          NOTIFY_TO:         ${{ secrets.NOTIFY_TO }}
+          RESEND_API_KEY:    ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM:       ${{ secrets.RESEND_FROM }}
+          SMTP_HOST:         ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:         ${{ secrets.SMTP_PORT }}
+          SMTP_USER:         ${{ secrets.SMTP_USER }}
+          SMTP_PASS:         ${{ secrets.SMTP_PASS }}
+          SMTP_FROM:         ${{ secrets.SMTP_FROM }}
+          BACKFILL:          ${{ inputs.backfill == 'true' && '1' || '' }}
+          DRY_RUN:           ${{ inputs.dry_run == 'true' && '1' || '' }}
+        run: python monitor.py
+
+      - name: Commit updated state
+        run: |
+          if [[ -n "$(git status --porcelain state/seen.json)" ]]; then
+            git config user.name  "domstol-monitor[bot]"
+            git config user.email "domstol-monitor@users.noreply.github.com"
+            git add state/seen.json
+            git commit -m "chore(state): update seen.json"
+            git push || (git pull --rebase && git push)
+          else
+            echo "No state changes to commit."
+          fi
