@@ -2,7 +2,7 @@ name: Monitor domstol.se
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       backfill:
